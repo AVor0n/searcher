@@ -451,12 +451,12 @@ async function performSearch(
                         if (searchInFileNames) {
                             // Поиск по имени файла (включая путь)
                             const relativePath = workspace.asRelativePath(fileUri);
-                            // Используем регулярное выражение для поиска без учета регистра
+                            // Добавляем './' к относительному пути
+                            const displayPath = './' + relativePath;
                             hasMatch = searchRegex.test(relativePath);
-                            searchRegex.lastIndex = 0; // Сбрасываем lastIndex
+                            searchRegex.lastIndex = 0;
 
                             if (hasMatch && !isExclude) {
-                                // Находим индекс совпадения с учетом регистра
                                 let matchIndex;
                                 if (caseSensitive) {
                                     matchIndex = relativePath.indexOf(searchText);
@@ -469,9 +469,9 @@ async function performSearch(
                                 if (matchIndex !== -1) {
                                     fileMatches.push({
                                         lineNumber: 1,
-                                        previewText: relativePath,
-                                        matchStartColumn: matchIndex,
-                                        matchEndColumn: matchIndex + searchText.length,
+                                        previewText: displayPath,
+                                        matchStartColumn: matchIndex + 2, // +2 для учета './'
+                                        matchEndColumn: matchIndex + searchText.length + 2,
                                     });
                                 }
                             }
@@ -528,13 +528,12 @@ async function performSearch(
 
                             if (!isExclude && fileMatches.length > 0) {
                                 newSearchResults.push({
-                                    filePath: fileUri.fsPath,
+                                    filePath: './' + workspace.asRelativePath(fileUri), // Добавляем './'
                                     matches: fileMatches,
                                 });
                             } else if (isExclude) {
-                                // Для исключающего поиска добавляем файл без совпадений
                                 newSearchResults.push({
-                                    filePath: fileUri.fsPath,
+                                    filePath: './' + workspace.asRelativePath(fileUri), // Добавляем './'
                                     matches: [
                                         {
                                             lineNumber: 1,
@@ -633,13 +632,13 @@ function activateBuffer(bufferId: number): void {
 
     // Создаем результаты для отображения файлов из буфера
     const bufferResults = buffer.files.map(uri => ({
-        filePath: uri.fsPath,
+        filePath: './' + workspace.asRelativePath(uri),
         matches: [
             {
                 lineNumber: 1,
-                previewText: workspace.asRelativePath(uri),
+                previewText: './' + workspace.asRelativePath(uri),
                 matchStartColumn: 0,
-                matchEndColumn: workspace.asRelativePath(uri).length,
+                matchEndColumn: workspace.asRelativePath(uri).length + 2,
             },
         ],
     }));
