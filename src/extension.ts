@@ -17,6 +17,7 @@ import {
     WebviewViewResolveContext,
     CancellationToken,
     Disposable,
+    Selection,
 } from 'vscode';
 import * as path from 'path';
 
@@ -80,6 +81,7 @@ class SequentialSearchViewProvider implements WebviewViewProvider {
                             'searcher.openFile',
                             message.filePath,
                             message.searchText,
+                            message.lineNumber,
                         );
                         break;
                     case 'getState':
@@ -160,42 +162,51 @@ export function activate(context: ExtensionContext) {
     // Команда для открытия файла из результатов поиска
     const openFileCommand = commands.registerCommand(
         'searcher.openFile',
-        async (filePath: string, searchText: string) => {
+        async (filePath: string, searchText: string, lineNumber?: number) => {
             try {
                 const fileUri = Uri.file(filePath);
                 const document = await workspace.openTextDocument(fileUri);
                 const editor = await window.showTextDocument(document);
 
-                // Найти все вхождения текста поиска в документе
-                const text = document.getText();
-                let searchRegex;
-                try {
-                    searchRegex = new RegExp(searchText, 'gi');
-                } catch (regexError) {
-                    searchRegex = new RegExp(escapeRegExp(searchText), 'gi');
-                }
+                if (lineNumber) {
+                    // Если указан номер строки, переходим к ней
+                    const position = new Position(lineNumber - 1, 0);
+                    editor.selection = new Selection(position, position);
+                    editor.revealRange(new Range(position, position));
+                } else {
+                    // Иначе ищем все совпадения в документе
+                    const text = document.getText();
+                    let searchRegex;
+                    try {
+                        searchRegex = new RegExp(searchText, 'gi');
+                    } catch (regexError) {
+                        searchRegex = new RegExp(escapeRegExp(searchText), 'gi');
+                    }
 
-                let match;
-                const ranges: Range[] = [];
+                    let match;
+                    const ranges: Range[] = [];
 
-                while ((match = searchRegex.exec(text)) !== null) {
-                    const startPos = document.positionAt(match.index);
-                    const endPos = document.positionAt(match.index + match[0].length);
-                    ranges.push(new Range(startPos, endPos));
-                }
+                    while ((match = searchRegex.exec(text)) !== null) {
+                        const startPos = document.positionAt(match.index);
+                        const endPos = document.positionAt(match.index + match[0].length);
+                        ranges.push(new Range(startPos, endPos));
+                    }
 
-                if (ranges.length > 0) {
-                    // Подсветить все вхождения
-                    editor.setDecorations(
-                        window.createTextEditorDecorationType({
-                            backgroundColor: new ThemeColor('editor.findMatchHighlightBackground'),
-                            overviewRulerColor: new ThemeColor(
-                                'editor.findMatchHighlightBackground',
-                            ),
-                            overviewRulerLane: 4,
-                        }),
-                        ranges,
-                    );
+                    if (ranges.length > 0) {
+                        // Подсветить все вхождения
+                        editor.setDecorations(
+                            window.createTextEditorDecorationType({
+                                backgroundColor: new ThemeColor(
+                                    'editor.findMatchHighlightBackground',
+                                ),
+                                overviewRulerColor: new ThemeColor(
+                                    'editor.findMatchHighlightBackground',
+                                ),
+                                overviewRulerLane: 4,
+                            }),
+                            ranges,
+                        );
+                    }
                 }
             } catch (error) {
                 console.error('Error opening file:', error);
@@ -225,6 +236,7 @@ function updateWebviewContent() {
         // Преобразуем URI файлов в строки для передачи в React
         const serializedState = {
             currentFiles: searchState.currentFiles.map(uri => uri.fsPath),
+            results: [], // Добавляем пустой массив результатов, если их нет
             buffers: searchState.buffers.map(buffer => ({
                 id: buffer.id,
                 files: buffer.files.map(uri => uri.fsPath),
@@ -320,43 +332,113 @@ async function performSearch(
         await window.withProgress(
             {
                 location: { viewId: 'sequentialSearcher.searchView' },
-                title: `${isExclude ? 'Excluding' : 'Searching for'} "${searchText}" in ${
-                    searchInFileNames ? 'file names' : 'file contents'
-                }`,
+                title: `${isExclude ? 'Excluding' : 'Searching for'} "${searchText}"...`,
             },
             async () => {
                 // Массив для хранения результатов
                 const matchedFiles: Uri[] = [];
+                const searchResults: any[] = [];
 
                 // Создать регулярное выражение для поиска
                 let searchRegex;
                 try {
-                    searchRegex = new RegExp(searchText, 'i');
+                    searchRegex = new RegExp(searchText, 'gi'); // Используем 'g' для поиска всех совпадений
                 } catch (regexError) {
                     // Если регулярное выражение некорректно, используем его как обычный текст
-                    searchRegex = new RegExp(escapeRegExp(searchText), 'i');
-                    window.showWarningMessage(`Invalid regex pattern. Searching as plain text.`);
+                    searchRegex = new RegExp(escapeRegExp(searchText), 'gi');
                 }
 
                 // Обрабатываем каждый файл
                 for (const fileUri of filesToSearch) {
                     try {
                         let hasMatch = false;
+                        const fileMatches = [];
 
                         if (searchInFileNames) {
                             // Поиск по имени файла (включая путь)
                             const relativePath = workspace.asRelativePath(fileUri);
                             hasMatch = searchRegex.test(relativePath);
+
+                            if (hasMatch && !isExclude) {
+                                // Для поиска по имени файла добавляем одно совпадение
+                                fileMatches.push({
+                                    lineNumber: 1,
+                                    previewText: relativePath,
+                                    matchStartColumn: relativePath.indexOf(searchText),
+                                    matchEndColumn:
+                                        relativePath.indexOf(searchText) + searchText.length,
+                                });
+                            }
                         } else {
-                            // Поиск по содержимому файла
-                            const document = await workspace.openTextDocument(fileUri);
-                            const content = document.getText();
-                            hasMatch = searchRegex.test(content);
+                            // Проверяем, является ли файл бинарным
+                            if (isBinaryPath(fileUri.fsPath)) {
+                                // Пропускаем бинарные файлы при поиске по содержимому
+                                continue;
+                            }
+
+                            try {
+                                // Поиск по содержимому файла
+                                const document = await workspace.openTextDocument(fileUri);
+                                const content = document.getText();
+
+                                // Сбрасываем lastIndex для повторного использования регулярного выражения
+                                searchRegex.lastIndex = 0;
+
+                                let match;
+                                while ((match = searchRegex.exec(content)) !== null) {
+                                    hasMatch = true;
+
+                                    if (!isExclude) {
+                                        const matchPosition = document.positionAt(match.index);
+                                        const lineNumber = matchPosition.line + 1;
+                                        const line = document.lineAt(matchPosition.line).text;
+
+                                        // Получаем позиции начала и конца совпадения в строке
+                                        const startPos = document.positionAt(match.index);
+                                        const endPos = document.positionAt(
+                                            match.index + match[0].length,
+                                        );
+
+                                        fileMatches.push({
+                                            lineNumber,
+                                            previewText: line,
+                                            matchStartColumn: startPos.character,
+                                            matchEndColumn: endPos.character,
+                                        });
+                                    }
+                                }
+                            } catch (docError) {
+                                // Если не удалось открыть файл как текстовый, считаем его бинарным и пропускаем
+                                console.log(
+                                    `Skipping binary or inaccessible file: ${fileUri.fsPath}`,
+                                );
+                                continue;
+                            }
                         }
 
                         // Добавляем файл в результаты в зависимости от типа поиска
                         if ((hasMatch && !isExclude) || (!hasMatch && isExclude)) {
                             matchedFiles.push(fileUri);
+
+                            if (!isExclude && fileMatches.length > 0) {
+                                searchResults.push({
+                                    filePath: fileUri.fsPath,
+                                    matches: fileMatches,
+                                });
+                            } else if (isExclude) {
+                                // Для исключающего поиска добавляем файл без совпадений
+                                searchResults.push({
+                                    filePath: fileUri.fsPath,
+                                    matches: [
+                                        {
+                                            lineNumber: 1,
+                                            previewText: 'File excluded from search',
+                                            matchStartColumn: 0,
+                                            matchEndColumn: 0,
+                                        },
+                                    ],
+                                });
+                            }
                         }
                     } catch (err) {
                         console.error(`Error processing file ${fileUri.fsPath}:`, err);
@@ -366,20 +448,21 @@ async function performSearch(
                 // Обновляем состояние поиска
                 searchState.currentFiles = matchedFiles;
 
-                // Сохраняем информацию о поиске в буфер, если он активен
-                if (searchState.activeBufferId >= 0) {
-                    const activeBuffer = searchState.buffers.find(
-                        b => b.id === searchState.activeBufferId,
-                    );
-                    if (activeBuffer) {
-                        activeBuffer.searchPattern = `${isExclude ? 'NOT ' : ''}${searchText} ${
-                            searchInFileNames ? '(in file names)' : '(in contents)'
-                        }`;
-                    }
-                }
+                // Отправляем результаты в webview
+                const serializedState = {
+                    results: searchResults,
+                    buffers: searchState.buffers.map(buffer => ({
+                        id: buffer.id,
+                        files: buffer.files.map(uri => uri.fsPath),
+                        searchPattern: buffer.searchPattern,
+                    })),
+                    activeBufferId: searchState.activeBufferId,
+                };
 
-                // Обновляем UI
-                updateWebviewContent();
+                searchState.webviewView?.webview.postMessage({
+                    type: 'updateState',
+                    state: serializedState,
+                });
             },
         );
     } catch (error) {
@@ -438,6 +521,65 @@ function activateBuffer(bufferId: number): void {
 // Экранирование специальных символов в регулярных выражениях
 function escapeRegExp(string: string): string {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Функция для проверки, является ли файл бинарным на основе расширения
+function isBinaryPath(filePath: string): boolean {
+    // Список расширений бинарных файлов
+    const binaryExtensions = [
+        // Изображения
+        '.jpg',
+        '.jpeg',
+        '.png',
+        '.gif',
+        '.bmp',
+        '.ico',
+        '.webp',
+        '.tiff',
+        '.svg',
+        // Аудио
+        '.mp3',
+        '.wav',
+        '.ogg',
+        '.flac',
+        '.aac',
+        // Видео
+        '.mp4',
+        '.avi',
+        '.mov',
+        '.wmv',
+        '.flv',
+        '.webm',
+        // Архивы
+        '.zip',
+        '.rar',
+        '.7z',
+        '.tar',
+        '.gz',
+        '.bz2',
+        // Документы
+        '.pdf',
+        '.doc',
+        '.docx',
+        '.xls',
+        '.xlsx',
+        '.ppt',
+        '.pptx',
+        // Исполняемые файлы
+        '.exe',
+        '.dll',
+        '.so',
+        '.dylib',
+        // Другие бинарные форматы
+        '.bin',
+        '.dat',
+        '.db',
+        '.sqlite',
+        '.vsix',
+    ];
+
+    const extension = path.extname(filePath).toLowerCase();
+    return binaryExtensions.includes(extension);
 }
 
 // This method is called when your extension is deactivated

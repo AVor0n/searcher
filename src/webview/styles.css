@@ -133,3 +133,69 @@ body {
   margin-left: 10px;
   color: var(--vscode-descriptionForeground);
 }
+
+.file-result {
+  margin-bottom: 8px;
+}
+
+.file-header {
+  display: flex;
+  align-items: center;
+  padding: 5px;
+  cursor: pointer;
+  background-color: var(--vscode-list-inactiveSelectionBackground);
+}
+
+.file-header:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.expand-icon {
+  margin-right: 5px;
+  font-size: 10px;
+  width: 10px;
+}
+
+.match-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.matches-list {
+  margin-left: 20px;
+}
+
+.match-item {
+  display: flex;
+  padding: 3px 5px;
+  cursor: pointer;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+}
+
+.match-item:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.line-number {
+  min-width: 40px;
+  color: var(--vscode-editorLineNumber-foreground);
+  text-align: right;
+  margin-right: 10px;
+}
+
+.match-preview {
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.match-highlight {
+  background-color: var(--vscode-editor-findMatchHighlightBackground);
+  color: var(--vscode-editor-findMatchHighlightForeground);
+}
+
+.match-context {
+  color: var(--vscode-editor-foreground);
+}

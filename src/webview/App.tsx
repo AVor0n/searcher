@@ -15,8 +15,18 @@ export interface SearchBuffer {
     searchPattern: string;
 }
 
+export interface SearchMatch {
+    lineNumber: number;
+    previewText: string;
+    matchStartColumn: number;
+    matchEndColumn: number;
+}
+
 export interface SearchState {
-    currentFiles: string[];
+    results: {
+        filePath: string;
+        matches: SearchMatch[];
+    }[];
     buffers: SearchBuffer[];
     activeBufferId: number;
 }
@@ -27,7 +37,7 @@ const App: React.FC = () => {
     const [isExclude, setIsExclude] = useState(false);
     const [searchInFileNames, setSearchInFileNames] = useState(false);
     const [searchState, setSearchState] = useState<SearchState>({
-        currentFiles: [],
+        results: [],
         buffers: [],
         activeBufferId: -1,
     });
@@ -79,11 +89,12 @@ const App: React.FC = () => {
         vscode.postMessage({ command: 'clearAllBuffers' });
     };
 
-    const handleOpenFile = (filePath: string) => {
+    const handleOpenFile = (filePath: string, lineNumber?: number) => {
         vscode.postMessage({
             command: 'openFile',
             filePath,
             searchText,
+            lineNumber,
         });
     };
 
@@ -101,17 +112,24 @@ const App: React.FC = () => {
             />
 
             <BufferPanel
-                buffers={searchState.buffers}
+                buffers={searchState.buffers || []}
                 activeBufferId={searchState.activeBufferId}
-                hasResults={searchState.currentFiles.length > 0}
+                hasResults={(searchState.results || []).length > 0}
                 onActivateBuffer={handleActivateBuffer}
                 onSaveBuffer={handleSaveBuffer}
                 onClearAllBuffers={handleClearAllBuffers}
             />
 
-            <div className="results-info">Found {searchState.currentFiles.length} files</div>
+            <div className="results-info">
+                Found{' '}
+                {(searchState.results || []).reduce(
+                    (total, file) => total + file.matches.length,
+                    0,
+                )}{' '}
+                matches in {(searchState.results || []).length} files
+            </div>
 
-            <ResultsList files={searchState.currentFiles} onOpenFile={handleOpenFile} />
+            <ResultsList results={searchState.results || []} onOpenFile={handleOpenFile} />
         </div>
     );
 };
