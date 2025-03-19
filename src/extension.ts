@@ -530,12 +530,6 @@ async function performSearch(
 
                 // Обновляем UI
                 updateWebviewContent();
-
-                window.showInformationMessage(
-                    `Found ${matchedFiles.length} files ${
-                        isExclude ? 'excluding' : 'containing'
-                    } "${searchText}" ${searchInFileNames ? 'in file names' : 'in contents'}`,
-                );
             },
         );
     } catch (error) {
