@@ -34,6 +34,9 @@ let searchState = {
 // Добавляем переменную для хранения результатов поиска
 let searchResults: Array<{ filePath: string; matches: Array<{ lineNumber: number; previewText: string; matchStartColumn: number; matchEndColumn: number; }> }> = [];
 
+// В начале файла, где определены другие глобальные переменные
+let searchText = ''; // Добавляем переменную для хранения текущего поискового запроса
+
 // Провайдер для WebviewView
 class SequentialSearchViewProvider implements WebviewViewProvider {
     public static readonly viewType = 'sequentialSearcher.searchView';
@@ -64,6 +67,7 @@ class SequentialSearchViewProvider implements WebviewViewProvider {
                             message.searchText,
                             message.isExclude,
                             message.searchInFileNames,
+                            message.caseSensitive,
                         );
                         break;
                     case 'saveBuffer':
@@ -320,8 +324,11 @@ async function performSearch(
     searchText: string,
     isExclude: boolean = false,
     searchInFileNames: boolean = false,
+    caseSensitive: boolean = false,
 ): Promise<void> {
     try {
+        // Сохраняем текущий поисковый запрос
+        searchText = searchText;
         // Определить, где искать
         let filesToSearch: Uri[];
 
@@ -357,17 +364,21 @@ async function performSearch(
                     }>;
                 }> = [];
 
+                // Сортируем файлы перед поиском для стабильного порядка
+                const sortedFilesToSearch = [...filesToSearch].sort((a, b) =>
+                    a.fsPath.localeCompare(b.fsPath),
+                );
+
                 // Создать регулярное выражение для поиска
                 let searchRegex;
                 try {
-                    searchRegex = new RegExp(searchText, 'gi'); // Используем 'g' для поиска всех совпадений
+                    searchRegex = new RegExp(searchText, caseSensitive ? 'g' : 'gi');
                 } catch (regexError) {
-                    // Если регулярное выражение некорректно, используем его как обычный текст
-                    searchRegex = new RegExp(escapeRegExp(searchText), 'gi');
+                    searchRegex = new RegExp(escapeRegExp(searchText), caseSensitive ? 'g' : 'gi');
                 }
 
                 // Обрабатываем каждый файл
-                for (const fileUri of filesToSearch) {
+                for (const fileUri of sortedFilesToSearch) {
                     try {
                         let hasMatch = false;
                         const fileMatches = [];
@@ -375,17 +386,29 @@ async function performSearch(
                         if (searchInFileNames) {
                             // Поиск по имени файла (включая путь)
                             const relativePath = workspace.asRelativePath(fileUri);
+                            // Используем регулярное выражение для поиска без учета регистра
                             hasMatch = searchRegex.test(relativePath);
+                            searchRegex.lastIndex = 0; // Сбрасываем lastIndex
 
                             if (hasMatch && !isExclude) {
-                                // Для поиска по имени файла добавляем одно совпадение
-                                fileMatches.push({
-                                    lineNumber: 1,
-                                    previewText: relativePath,
-                                    matchStartColumn: relativePath.indexOf(searchText),
-                                    matchEndColumn:
-                                        relativePath.indexOf(searchText) + searchText.length,
-                                });
+                                // Находим индекс совпадения с учетом регистра
+                                let matchIndex;
+                                if (caseSensitive) {
+                                    matchIndex = relativePath.indexOf(searchText);
+                                } else {
+                                    const lowerPath = relativePath.toLowerCase();
+                                    const lowerSearch = searchText.toLowerCase();
+                                    matchIndex = lowerPath.indexOf(lowerSearch);
+                                }
+
+                                if (matchIndex !== -1) {
+                                    fileMatches.push({
+                                        lineNumber: 1,
+                                        previewText: relativePath,
+                                        matchStartColumn: matchIndex,
+                                        matchEndColumn: matchIndex + searchText.length,
+                                    });
+                                }
                             }
                         } else {
                             // Проверяем, является ли файл бинарным
@@ -463,9 +486,12 @@ async function performSearch(
                     }
                 }
 
+                // Сортируем результаты поиска
+                newSearchResults.sort((a, b) => a.filePath.localeCompare(b.filePath));
+
                 // Обновляем состояние поиска и сохраняем результаты
                 searchState.currentFiles = matchedFiles;
-                searchResults = newSearchResults; // Сохраняем в глобальную переменную
+                searchResults = newSearchResults;
 
                 // Отправляем результаты в webview
                 const serializedState = {
@@ -505,15 +531,15 @@ function saveCurrentResultsToBuffer(): void {
     const newBuffer: SearchBuffer = {
         id: maxId + 1,
         files: [...searchState.currentFiles],
-        searchPattern: 'Last search',
+        searchPattern: searchText, // Сохраняем текущий поисковый запрос
     };
 
     searchState.buffers.push(newBuffer);
     searchState.activeBufferId = newBuffer.id;
 
-    // Отправляем обновленное состояние через postMessage вместо updateWebviewContent
+    // Отправляем обновленное состояние через postMessage
     const serializedState = {
-        results: [], // Очищаем результаты при создании нового буфера
+        results: searchResults, // Отправляем текущие результаты поиска
         buffers: searchState.buffers.map(buffer => ({
             id: buffer.id,
             files: buffer.files.map(uri => uri.fsPath),

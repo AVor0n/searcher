@@ -7,6 +7,8 @@ interface SearchPanelProps {
     setIsExclude: (value: boolean) => void;
     searchInFileNames: boolean;
     setSearchInFileNames: (value: boolean) => void;
+    caseSensitive: boolean;
+    setCaseSensitive: (value: boolean) => void;
     onSearch: () => void;
 }
 
@@ -17,6 +19,8 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
     setIsExclude,
     searchInFileNames,
     setSearchInFileNames,
+    caseSensitive,
+    setCaseSensitive,
     onSearch,
 }) => {
     const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -60,6 +64,16 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
                             onChange={e => setSearchInFileNames(e.target.checked)}
                         />
                         <label htmlFor="fileNameToggle">File Names</label>
+                    </div>
+
+                    <div className="option-toggle">
+                        <input
+                            type="checkbox"
+                            id="caseSensitiveToggle"
+                            checked={caseSensitive}
+                            onChange={e => setCaseSensitive(e.target.checked)}
+                        />
+                        <label htmlFor="caseSensitiveToggle">Case Sensitive</label>
                     </div>
                 </div>
             </div>

@@ -37,6 +37,7 @@ const App: React.FC = () => {
         searchText: '',
         isExclude: false,
         searchInFileNames: false,
+        caseSensitive: false,
         searchState: {
             results: [],
             buffers: [],
@@ -47,6 +48,7 @@ const App: React.FC = () => {
     const [searchText, setSearchText] = useState(initialState.searchText);
     const [isExclude, setIsExclude] = useState(initialState.isExclude);
     const [searchInFileNames, setSearchInFileNames] = useState(initialState.searchInFileNames);
+    const [caseSensitive, setCaseSensitive] = useState(initialState.caseSensitive || false);
     const [searchState, setSearchState] = useState<SearchState>({
         // Убедимся, что все поля определены
         results: Array.isArray(initialState.searchState?.results)
@@ -67,9 +69,10 @@ const App: React.FC = () => {
             searchText,
             isExclude,
             searchInFileNames,
+            caseSensitive,
             searchState,
         });
-    }, [searchText, isExclude, searchInFileNames, searchState]);
+    }, [searchText, isExclude, searchInFileNames, caseSensitive, searchState]);
 
     // Обработчик сообщений от расширения
     useEffect(() => {
@@ -114,6 +117,7 @@ const App: React.FC = () => {
             searchText,
             isExclude,
             searchInFileNames,
+            caseSensitive,
         });
     };
 
@@ -151,6 +155,8 @@ const App: React.FC = () => {
                 setIsExclude={setIsExclude}
                 searchInFileNames={searchInFileNames}
                 setSearchInFileNames={setSearchInFileNames}
+                caseSensitive={caseSensitive}
+                setCaseSensitive={setCaseSensitive}
                 onSearch={handleSearch}
             />
 
