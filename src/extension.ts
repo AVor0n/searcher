@@ -18,6 +18,7 @@ import {
     CancellationToken,
     Disposable,
 } from 'vscode';
+import * as path from 'path';
 
 // Тип для хранения результатов поиска
 interface SearchBuffer {
@@ -52,7 +53,7 @@ class SequentialSearchViewProvider implements WebviewViewProvider {
 
         webviewView.webview.options = {
             enableScripts: true,
-            localResourceRoots: [Uri.joinPath(this._extensionContext.extensionUri, 'media')],
+            localResourceRoots: [this._extensionContext.extensionUri],
         };
 
         webviewView.webview.onDidReceiveMessage(
@@ -80,6 +81,32 @@ class SequentialSearchViewProvider implements WebviewViewProvider {
                             message.filePath,
                             message.searchText,
                         );
+                        break;
+                    case 'getState':
+                        // Отправляем текущее состояние в webview
+                        const serializedState = {
+                            currentFiles: searchState.currentFiles.map(uri => uri.fsPath),
+                            buffers: searchState.buffers.map(buffer => ({
+                                id: buffer.id,
+                                files: buffer.files.map(uri => uri.fsPath),
+                                searchPattern: buffer.searchPattern,
+                            })),
+                            activeBufferId: searchState.activeBufferId,
+                        };
+
+                        searchState.webviewView?.webview.postMessage({
+                            type: 'updateState',
+                            state: serializedState,
+                        });
+                        break;
+                    case 'error':
+                        console.error('Webview error:', message.message);
+                        if (message.error) {
+                            console.error(message.error);
+                        }
+                        if (message.source) {
+                            console.error('Source:', message.source);
+                        }
                         break;
                 }
             },
@@ -183,264 +210,87 @@ export function activate(context: ExtensionContext) {
 // Обновление содержимого webview
 function updateWebviewContent() {
     if (!searchState.webviewView) {
+        console.error('updateWebviewContent: webviewView is undefined');
         return;
     }
 
-    const bufferButtons = searchState.buffers
-        .map((buffer, index) => {
-            const isActive = buffer.id === searchState.activeBufferId;
-            return `
-			<button class="buffer-button ${isActive ? 'active' : ''}"
-					onclick="activateBuffer(${buffer.id})"
-					title="Buffer ${buffer.id + 1}: ${buffer.files.length} files, search: '${buffer.searchPattern}'">
-				${buffer.id + 1}
-			</button>
-		`;
-        })
-        .join('');
+    // Получаем путь к файлам React
+    const extensionUri = searchState.webviewView.webview.options.localResourceRoots?.[0];
+    if (!extensionUri) {
+        console.error('updateWebviewContent: extensionUri is undefined');
+        return;
+    }
 
-    const addBufferButton = `
-		<button class="buffer-button add-buffer"
-				onclick="saveBuffer()"
-				${searchState.currentFiles.length === 0 ? 'disabled' : ''}
-				title="Save current results to a new buffer">
-			+
-		</button>
-	`;
+    try {
+        // Преобразуем URI файлов в строки для передачи в React
+        const serializedState = {
+            currentFiles: searchState.currentFiles.map(uri => uri.fsPath),
+            buffers: searchState.buffers.map(buffer => ({
+                id: buffer.id,
+                files: buffer.files.map(uri => uri.fsPath),
+                searchPattern: buffer.searchPattern,
+            })),
+            activeBufferId: searchState.activeBufferId,
+        };
 
-    const filesList = searchState.currentFiles
-        .map(file => {
-            const relativePath = workspace.asRelativePath(file);
-            return `
-			<div class="file-item" onclick="openFile('${file.fsPath.replace(/\\/g, '\\\\')}')">
-				<span class="file-icon">📄</span>
-				<span class="file-path">${relativePath}</span>
-			</div>
-		`;
-        })
-        .join('');
+        console.log('Updating webview with state:', serializedState);
 
-    const activeBufferInfo =
-        searchState.activeBufferId >= 0
-            ? `<div class="active-buffer-info">Using buffer ${searchState.activeBufferId + 1} (${
-                  searchState.buffers.find(b => b.id === searchState.activeBufferId)?.files
-                      .length || 0
-              } files)</div>`
-            : '';
+        // Создаем HTML для React приложения
+        const scriptUri = searchState.webviewView.webview.asWebviewUri(
+            Uri.joinPath(extensionUri, 'dist', 'webview.js'),
+        );
+        const styleUri = searchState.webviewView.webview.asWebviewUri(
+            Uri.joinPath(extensionUri, 'dist', 'webview.css'),
+        );
 
-    searchState.webviewView.webview.html = `
-		<!DOCTYPE html>
-		<html lang="en">
-		<head>
-			<meta charset="UTF-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
-			<title>Sequential Search</title>
-			<style>
-				body {
-					font-family: var(--vscode-font-family);
-					padding: 10px;
-					color: var(--vscode-foreground);
-				}
-				.search-container {
-					display: flex;
-					flex-direction: column;
-					margin-bottom: 10px;
-					gap: 8px;
-				}
-				.search-input {
-					width: 100%;
-					padding: 6px;
-					border: 1px solid var(--vscode-input-border);
-					background-color: var(--vscode-input-background);
-					color: var(--vscode-input-foreground);
-				}
-				.search-actions {
-					display: flex;
-					align-items: center;
-				}
-				.search-button {
-					padding: 6px 12px;
-					background-color: var(--vscode-button-background);
-					color: var(--vscode-button-foreground);
-					border: none;
-					cursor: pointer;
-				}
-				.search-button:hover {
-					background-color: var(--vscode-button-hoverBackground);
-				}
-				.search-options {
-					display: flex;
-					align-items: center;
-					gap: 10px;
-					margin-left: auto;
-				}
-				.option-toggle {
-					display: flex;
-					align-items: center;
-					gap: 5px;
-				}
-				.buffer-container {
-					display: flex;
-					margin: 10px 0;
-					align-items: center;
-					flex-wrap: wrap;
-					gap: 5px;
-				}
-				.buffer-buttons {
-					display: flex;
-					flex-wrap: wrap;
-					gap: 5px;
-				}
-				.buffer-button {
-					padding: 5px 10px;
-					background-color: var(--vscode-button-secondaryBackground);
-					color: var(--vscode-button-secondaryForeground);
-					border: 1px solid var(--vscode-button-border);
-					cursor: pointer;
-					min-width: 30px;
-					text-align: center;
-				}
-				.buffer-button.active {
-					background-color: var(--vscode-button-background);
-					color: var(--vscode-button-foreground);
-				}
-				.buffer-button:hover {
-					background-color: var(--vscode-button-hoverBackground);
-				}
-				.buffer-button:disabled {
-					opacity: 0.5;
-					cursor: not-allowed;
-				}
-				.clear-button {
-					margin-left: auto;
-					padding: 5px 10px;
-					background-color: var(--vscode-errorForeground);
-					color: white;
-					border: none;
-					cursor: pointer;
-				}
-				.results-container {
-					margin-top: 10px;
-					border: 1px solid var(--vscode-panel-border);
-					height: calc(100vh - 250px);
-					overflow: auto;
-				}
-				.file-item {
-					padding: 5px 10px;
-					cursor: pointer;
-					display: flex;
-					align-items: center;
-				}
-				.file-item:hover {
-					background-color: var(--vscode-list-hoverBackground);
-				}
-				.file-icon {
-					margin-right: 5px;
-				}
-				.results-info {
-					margin: 10px 0;
-					font-style: italic;
-				}
-				.active-buffer-info {
-					margin-left: 10px;
-					color: var(--vscode-descriptionForeground);
-				}
-			</style>
-		</head>
-		<body>
-			<div class="search-container">
-				<input type="text" id="searchInput" class="search-input" placeholder="Search regex pattern...">
-				<div class="search-actions">
-					<button class="search-button" onclick="search()">Search</button>
-					<div class="search-options">
-						<div class="option-toggle">
-							<input type="checkbox" id="excludeToggle">
-							<label for="excludeToggle">Exclude</label>
-						</div>
-						<div class="option-toggle">
-							<input type="checkbox" id="fileNameToggle">
-							<label for="fileNameToggle">File Names</label>
-						</div>
-					</div>
-				</div>
-			</div>
+        console.log('Script URI:', scriptUri.toString());
+        console.log('Style URI:', styleUri.toString());
 
-			<div class="buffer-container">
-				<div class="buffer-buttons">
-					${bufferButtons}
-					${addBufferButton}
-				</div>
-				<button class="clear-button" onclick="clearAllBuffers()">Clear All</button>
-			</div>
+        searchState.webviewView.webview.html = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Sequential Search</title>
+                <link rel="stylesheet" href="${styleUri}">
+            </head>
+            <body>
+                <div id="root"></div>
+                <script>
+                    // Вызываем API только один раз и сохраняем в глобальную переменную
+                    const vscode = acquireVsCodeApi();
 
-			${activeBufferInfo}
+                    // Инициализируем состояние
+                    vscode.setState(${JSON.stringify(serializedState)});
 
-			<div class="results-info">
-				Found ${searchState.currentFiles.length} files
-			</div>
+                    // Добавляем обработчик ошибок
+                    window.onerror = function(message, source, lineno, colno, error) {
+                        vscode.postMessage({
+                            command: 'error',
+                            message: message,
+                            source: source,
+                            error: error ? error.stack : null
+                        });
+                        return true;
+                    };
 
-			<div class="results-container">
-				${filesList}
-			</div>
-
-			<script>
-				const vscode = acquireVsCodeApi();
-
-				function search() {
-					const searchText = document.getElementById('searchInput').value;
-					const isExclude = document.getElementById('excludeToggle').checked;
-					const searchInFileNames = document.getElementById('fileNameToggle').checked;
-
-					if (searchText.trim() === '') {
-						return;
-					}
-
-					vscode.postMessage({
-						command: 'search',
-						searchText,
-						isExclude,
-						searchInFileNames
-					});
-				}
-
-				function saveBuffer() {
-					vscode.postMessage({
-						command: 'saveBuffer'
-					});
-				}
-
-				function activateBuffer(bufferId) {
-					vscode.postMessage({
-						command: 'activateBuffer',
-						bufferId
-					});
-				}
-
-				function clearAllBuffers() {
-					vscode.postMessage({
-						command: 'clearAllBuffers'
-					});
-				}
-
-				function openFile(filePath) {
-					const searchText = document.getElementById('searchInput').value;
-					vscode.postMessage({
-						command: 'openFile',
-						filePath,
-						searchText
-					});
-				}
-
-				// Обработка нажатия Enter в поле поиска
-				document.getElementById('searchInput').addEventListener('keypress', (e) => {
-					if (e.key === 'Enter') {
-						search();
-					}
-				});
-			</script>
-		</body>
-		</html>
-	`;
+                    // Перехватываем ошибки в промисах
+                    window.addEventListener('unhandledrejection', function(event) {
+                        vscode.postMessage({
+                            command: 'error',
+                            message: 'Unhandled Promise Rejection',
+                            error: event.reason ? (event.reason.stack || event.reason.toString()) : null
+                        });
+                    });
+                </script>
+                <script src="${scriptUri}"></script>
+            </body>
+            </html>
+        `;
+    } catch (error) {
+        console.error('Error updating webview content:', error);
+    }
 }
 
 // Выполнение поиска
@@ -568,10 +418,6 @@ function saveCurrentResultsToBuffer(): void {
     searchState.activeBufferId = newBuffer.id;
 
     updateWebviewContent();
-
-    window.showInformationMessage(
-        `Saved ${newBuffer.files.length} files to buffer ${newBuffer.id + 1}`,
-    );
 }
 
 // Активация буфера

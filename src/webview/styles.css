@@ -1,0 +1,135 @@
+body {
+  font-family: var(--vscode-font-family);
+  padding: 10px;
+  color: var(--vscode-foreground);
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.search-container {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--vscode-input-border);
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+}
+
+.search-actions {
+  display: flex;
+  align-items: center;
+}
+
+.search-button {
+  padding: 6px 12px;
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  cursor: pointer;
+}
+
+.search-button:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+.search-options {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.option-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.buffer-container {
+  display: flex;
+  margin: 10px 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.buffer-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.buffer-button {
+  padding: 5px 10px;
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--vscode-button-border);
+  cursor: pointer;
+  min-width: 30px;
+  text-align: center;
+}
+
+.buffer-button.active {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.buffer-button:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+.buffer-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.clear-button {
+  margin-left: auto;
+  padding: 5px 10px;
+  background-color: var(--vscode-errorForeground);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.results-container {
+  margin-top: 10px;
+  border: 1px solid var(--vscode-panel-border);
+  height: calc(100vh - 250px);
+  overflow: auto;
+}
+
+.file-item {
+  padding: 5px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.file-item:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.file-icon {
+  margin-right: 5px;
+}
+
+.results-info {
+  margin: 10px 0;
+  font-style: italic;
+}
+
+.active-buffer-info {
+  margin-left: 10px;
+  color: var(--vscode-descriptionForeground);
+}

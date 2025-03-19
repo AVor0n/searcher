@@ -1,0 +1,68 @@
+import React from 'react';
+
+interface SearchPanelProps {
+    searchText: string;
+    setSearchText: (text: string) => void;
+    isExclude: boolean;
+    setIsExclude: (value: boolean) => void;
+    searchInFileNames: boolean;
+    setSearchInFileNames: (value: boolean) => void;
+    onSearch: () => void;
+}
+
+export const SearchPanel: React.FC<SearchPanelProps> = ({
+    searchText,
+    setSearchText,
+    isExclude,
+    setIsExclude,
+    searchInFileNames,
+    setSearchInFileNames,
+    onSearch,
+}) => {
+    const handleKeyPress = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            onSearch();
+        }
+    };
+
+    return (
+        <div className="search-container">
+            <input
+                type="text"
+                className="search-input"
+                placeholder="Search regex pattern..."
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                onKeyPress={handleKeyPress}
+            />
+
+            <div className="search-actions">
+                <button className="search-button" onClick={onSearch}>
+                    Search
+                </button>
+
+                <div className="search-options">
+                    <div className="option-toggle">
+                        <input
+                            type="checkbox"
+                            id="excludeToggle"
+                            checked={isExclude}
+                            onChange={e => setIsExclude(e.target.checked)}
+                        />
+                        <label htmlFor="excludeToggle">Exclude</label>
+                    </div>
+
+                    <div className="option-toggle">
+                        <input
+                            type="checkbox"
+                            id="fileNameToggle"
+                            checked={searchInFileNames}
+                            onChange={e => setSearchInFileNames(e.target.checked)}
+                        />
+                        <label htmlFor="fileNameToggle">File Names</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
