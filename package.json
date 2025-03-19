@@ -17,38 +17,36 @@
     "activationEvents": [],
     "main": "./dist/extension.js",
     "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "sequential-searcher",
+                    "title": "Sequential Search",
+                    "icon": "$(search)"
+                }
+            ]
+        },
         "views": {
-            "explorer": [
+            "sequential-searcher": [
                 {
                     "id": "sequentialSearcher.searchView",
-                    "name": "Sequential Search"
+                    "name": "Search",
+                    "type": "webview"
                 }
             ]
         },
         "commands": [
             {
-                "command": "searcher.startSearch",
-                "title": "Sequential Search: Open Search Panel"
+                "command": "searcher.focusSearchView",
+                "title": "Sequential Search: Focus Search Panel"
             },
             {
                 "command": "searcher.clearAllBuffers",
                 "title": "Sequential Search: Clear All Buffers"
             },
             {
-                "command": "searcher.continueSearch",
-                "title": "Sequential Search: Continue Search"
-            },
-            {
-                "command": "searcher.excludeSearch",
-                "title": "Sequential Search: Exclude Pattern"
-            },
-            {
-                "command": "searcher.showResults",
-                "title": "Sequential Search: Show Current Results"
-            },
-            {
-                "command": "searcher.resetSearch",
-                "title": "Sequential Search: Reset Search"
+                "command": "searcher.openFile",
+                "title": "Sequential Search: Open File"
             }
         ],
         "configuration": {

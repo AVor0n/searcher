@@ -14,8 +14,11 @@ Sequential Searcher - это расширение для VS Code, которое
 
 ### Открытие панели поиска
 
+Панель поиска доступна в боковой панели VS Code. Нажмите на значок "Sequential Search" в боковой панели (рядом с Explorer, Search, Source Control и т.д.).
+
+Вы также можете использовать команду:
 1. Нажмите `Ctrl+Shift+P` (Windows/Linux) или `Cmd+Shift+P` (Mac) для открытия палитры команд
-2. Введите "Sequential Search: Open Search Panel" и выберите эту команду
+2. Введите "Sequential Search: Focus Search Panel" и выберите эту команду
 
 ### Выполнение поиска
 

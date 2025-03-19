@@ -12,7 +12,6 @@ import {
     Position,
     Range,
     ThemeColor,
-    Selection,
     WebviewView,
     WebviewViewProvider,
     WebviewViewResolveContext,
@@ -114,6 +113,15 @@ export function activate(context: ExtensionContext) {
         window.registerWebviewViewProvider(SequentialSearchViewProvider.viewType, provider),
     );
 
+    // Команда для фокусирования на панели поиска
+    const focusSearchViewCommand = commands.registerCommand(
+        'searcher.focusSearchView',
+        async () => {
+            // Показать панель поиска и сфокусироваться на ней
+            await commands.executeCommand('sequential-searcher.focus');
+        },
+    );
+
     // Команда для очистки всех буферов
     const clearAllBuffersCommand = commands.registerCommand('searcher.clearAllBuffers', () => {
         searchState.buffers = [];
@@ -150,10 +158,6 @@ export function activate(context: ExtensionContext) {
                 }
 
                 if (ranges.length > 0) {
-                    // Выделить первое вхождение
-                    editor.selection = new Selection(ranges[0].start, ranges[0].end);
-                    editor.revealRange(ranges[0]);
-
                     // Подсветить все вхождения
                     editor.setDecorations(
                         window.createTextEditorDecorationType({
@@ -173,7 +177,7 @@ export function activate(context: ExtensionContext) {
         },
     );
 
-    context.subscriptions.push(clearAllBuffersCommand, openFileCommand);
+    context.subscriptions.push(focusSearchViewCommand, clearAllBuffersCommand, openFileCommand);
 }
 
 // Обновление содержимого webview
