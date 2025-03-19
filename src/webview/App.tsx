@@ -62,6 +62,7 @@ const App: React.FC = () => {
                 ? initialState.searchState.activeBufferId
                 : -1,
     });
+    const [isSearching, setIsSearching] = useState(false);
 
     // Сохраняем состояние при его изменении
     useEffect(() => {
@@ -95,6 +96,7 @@ const App: React.FC = () => {
                             ? message.state.activeBufferId
                             : prevState.activeBufferId,
                 }));
+                setIsSearching(false);
             }
         };
 
@@ -110,8 +112,9 @@ const App: React.FC = () => {
 
     // Обработчики событий
     const handleSearch = () => {
-        if (searchText.trim() === '') return;
+        if (searchText.trim() === '' || isSearching) return;
 
+        setIsSearching(true);
         vscode.postMessage({
             command: 'search',
             searchText,
@@ -158,6 +161,7 @@ const App: React.FC = () => {
                 caseSensitive={caseSensitive}
                 setCaseSensitive={setCaseSensitive}
                 onSearch={handleSearch}
+                isSearching={isSearching}
             />
 
             <BufferPanel

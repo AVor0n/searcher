@@ -10,6 +10,7 @@ interface SearchPanelProps {
     caseSensitive: boolean;
     setCaseSensitive: (value: boolean) => void;
     onSearch: () => void;
+    isSearching: boolean;
 }
 
 export const SearchPanel: React.FC<SearchPanelProps> = ({
@@ -22,9 +23,10 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
     caseSensitive,
     setCaseSensitive,
     onSearch,
+    isSearching,
 }) => {
     const handleKeyPress = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' && !isSearching) {
             onSearch();
         }
     };
@@ -38,11 +40,16 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
                 onKeyPress={handleKeyPress}
+                disabled={isSearching}
             />
 
             <div className="search-actions">
-                <button className="search-button" onClick={onSearch}>
-                    Search
+                <button
+                    className={`search-button ${isSearching ? 'loading' : ''}`}
+                    onClick={onSearch}
+                    disabled={isSearching}
+                >
+                    {isSearching ? 'Searching...' : 'Search'}
                 </button>
 
                 <div className="search-options">
