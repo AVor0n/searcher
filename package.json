@@ -3,6 +3,11 @@
     "displayName": "Sequential Searcher",
     "description": "Perform sequential searches with inclusion and exclusion patterns",
     "version": "0.0.1",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/AVor0n/searcher.git"
+    },
+    "license": "MIT",
     "engines": {
         "vscode": "^1.98.0"
     },
