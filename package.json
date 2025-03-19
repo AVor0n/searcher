@@ -95,6 +95,7 @@
         "npm-run-all": "^4.1.5",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
-        "typescript": "^5.7.3"
+        "typescript": "^5.7.3",
+        "ignore": "^5.3.1"
     }
 }

@@ -15,6 +15,7 @@ import {
     Selection,
 } from 'vscode';
 import * as path from 'path';
+import ignore from 'ignore';
 
 // Тип для хранения результатов поиска
 interface SearchBuffer {
@@ -32,7 +33,15 @@ let searchState = {
 };
 
 // Добавляем переменную для хранения результатов поиска
-let searchResults: Array<{ filePath: string; matches: Array<{ lineNumber: number; previewText: string; matchStartColumn: number; matchEndColumn: number; }> }> = [];
+let searchResults: Array<{
+    filePath: string;
+    matches: Array<{
+        lineNumber: number;
+        previewText: string;
+        matchStartColumn: number;
+        matchEndColumn: number;
+    }>;
+}> = [];
 
 // В начале файла, где определены другие глобальные переменные
 let searchText = ''; // Добавляем переменную для хранения текущего поискового запроса
@@ -329,6 +338,7 @@ async function performSearch(
     try {
         // Сохраняем текущий поисковый запрос
         searchText = searchText;
+
         // Определить, где искать
         let filesToSearch: Uri[];
 
@@ -341,8 +351,63 @@ async function performSearch(
                 throw new Error('Active buffer not found');
             }
         } else {
-            // Искать во всех файлах проекта
-            filesToSearch = await workspace.findFiles('**/*', '**/node_modules/**');
+            // Получаем настройки исключений из VS Code
+            const searchExclude = workspace.getConfiguration('search').get('exclude') as Record<
+                string,
+                boolean
+            >;
+
+            // Преобразуем объект исключений в массив паттернов
+            const excludePatterns = Object.entries(searchExclude)
+                .filter(([_, enabled]) => enabled)
+                .map(([pattern]) => pattern);
+
+            // Добавляем стандартные исключения
+            excludePatterns.push('**/node_modules/**');
+
+            // Создаем экземпляр ignore
+            const ig = ignore();
+
+            // Пытаемся прочитать .gitignore
+            const workspaceFolders = workspace.workspaceFolders;
+            if (workspaceFolders && workspaceFolders.length > 0) {
+                const gitignorePath = path.join(workspaceFolders[0].uri.fsPath, '.gitignore');
+                try {
+                    await workspace.fs.stat(Uri.file(gitignorePath));
+                    const gitignoreContent = await workspace.fs.readFile(Uri.file(gitignorePath));
+                    const gitignoreRules = Buffer.from(gitignoreContent).toString('utf8');
+
+                    // Добавляем правила из .gitignore
+                    ig.add(gitignoreRules);
+
+                    // Получаем все файлы
+                    const allFiles = await workspace.findFiles('**/*');
+
+                    // Фильтруем файлы согласно правилам .gitignore и search.exclude
+                    filesToSearch = allFiles.filter(file => {
+                        const relativePath = workspace.asRelativePath(file);
+
+                        // Проверяем паттерны из search.exclude
+                        const isExcludedBySearchConfig = excludePatterns.some(pattern =>
+                            new RegExp(pattern.replace(/\*/g, '.*')).test(relativePath),
+                        );
+
+                        // Проверяем правила из .gitignore
+                        const isExcludedByGitignore = ig.ignores(relativePath);
+
+                        return !isExcludedBySearchConfig && !isExcludedByGitignore;
+                    });
+                } catch {
+                    // Если .gitignore не найден, используем только search.exclude
+                    console.log('No .gitignore file found or unable to read it');
+                    filesToSearch = await workspace.findFiles(
+                        '**/*',
+                        `{${excludePatterns.join(',')}}`,
+                    );
+                }
+            } else {
+                filesToSearch = await workspace.findFiles('**/*', `{${excludePatterns.join(',')}}`);
+            }
         }
 
         // Показать индикатор прогресса
@@ -566,9 +631,22 @@ function activateBuffer(bufferId: number): void {
     searchState.activeBufferId = bufferId;
     searchState.currentFiles = [...buffer.files];
 
-    // Отправляем обновленное состояние через postMessage вместо updateWebviewContent
+    // Создаем результаты для отображения файлов из буфера
+    const bufferResults = buffer.files.map(uri => ({
+        filePath: uri.fsPath,
+        matches: [
+            {
+                lineNumber: 1,
+                previewText: workspace.asRelativePath(uri),
+                matchStartColumn: 0,
+                matchEndColumn: workspace.asRelativePath(uri).length,
+            },
+        ],
+    }));
+
+    // Отправляем обновленное состояние через postMessage
     const serializedState = {
-        results: [], // Очищаем результаты при активации буфера
+        results: bufferResults, // Отправляем результаты вместо пустого массива
         buffers: searchState.buffers.map(buffer => ({
             id: buffer.id,
             files: buffer.files.map(uri => uri.fsPath),
