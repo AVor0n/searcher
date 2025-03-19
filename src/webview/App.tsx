@@ -32,48 +32,17 @@ export interface SearchState {
 }
 
 const App: React.FC = () => {
-    // Загружаем сохраненное состояние из vscode.getState()
-    const initialState = vscode.getState() || {
-        searchText: '',
-        isExclude: false,
-        searchInFileNames: false,
-        caseSensitive: false,
-        searchState: {
-            results: [],
-            buffers: [],
-            activeBufferId: -1,
-        },
-    };
-
-    const [searchText, setSearchText] = useState(initialState.searchText);
-    const [isExclude, setIsExclude] = useState(initialState.isExclude);
-    const [searchInFileNames, setSearchInFileNames] = useState(initialState.searchInFileNames);
-    const [caseSensitive, setCaseSensitive] = useState(initialState.caseSensitive || false);
+    // Используем дефолтные значения вместо сохраненного состояния
+    const [searchText, setSearchText] = useState('');
+    const [isExclude, setIsExclude] = useState(false);
+    const [searchInFileNames, setSearchInFileNames] = useState(false);
+    const [caseSensitive, setCaseSensitive] = useState(false);
     const [searchState, setSearchState] = useState<SearchState>({
-        // Убедимся, что все поля определены
-        results: Array.isArray(initialState.searchState?.results)
-            ? initialState.searchState.results
-            : [],
-        buffers: Array.isArray(initialState.searchState?.buffers)
-            ? initialState.searchState.buffers
-            : [],
-        activeBufferId:
-            typeof initialState.searchState?.activeBufferId === 'number'
-                ? initialState.searchState.activeBufferId
-                : -1,
+        results: [],
+        buffers: [],
+        activeBufferId: -1,
     });
     const [isSearching, setIsSearching] = useState(false);
-
-    // Сохраняем состояние при его изменении
-    useEffect(() => {
-        vscode.setState({
-            searchText,
-            isExclude,
-            searchInFileNames,
-            caseSensitive,
-            searchState,
-        });
-    }, [searchText, isExclude, searchInFileNames, caseSensitive, searchState]);
 
     // Обработчик сообщений от расширения
     useEffect(() => {
