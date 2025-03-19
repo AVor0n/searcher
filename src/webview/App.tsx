@@ -32,23 +32,66 @@ export interface SearchState {
 }
 
 const App: React.FC = () => {
-    // Состояние
-    const [searchText, setSearchText] = useState('');
-    const [isExclude, setIsExclude] = useState(false);
-    const [searchInFileNames, setSearchInFileNames] = useState(false);
+    // Загружаем сохраненное состояние из vscode.getState()
+    const initialState = vscode.getState() || {
+        searchText: '',
+        isExclude: false,
+        searchInFileNames: false,
+        searchState: {
+            results: [],
+            buffers: [],
+            activeBufferId: -1,
+        },
+    };
+
+    const [searchText, setSearchText] = useState(initialState.searchText);
+    const [isExclude, setIsExclude] = useState(initialState.isExclude);
+    const [searchInFileNames, setSearchInFileNames] = useState(initialState.searchInFileNames);
     const [searchState, setSearchState] = useState<SearchState>({
-        results: [],
-        buffers: [],
-        activeBufferId: -1,
+        // Убедимся, что все поля определены
+        results: Array.isArray(initialState.searchState?.results)
+            ? initialState.searchState.results
+            : [],
+        buffers: Array.isArray(initialState.searchState?.buffers)
+            ? initialState.searchState.buffers
+            : [],
+        activeBufferId:
+            typeof initialState.searchState?.activeBufferId === 'number'
+                ? initialState.searchState.activeBufferId
+                : -1,
     });
+
+    // Сохраняем состояние при его изменении
+    useEffect(() => {
+        vscode.setState({
+            searchText,
+            isExclude,
+            searchInFileNames,
+            searchState,
+        });
+    }, [searchText, isExclude, searchInFileNames, searchState]);
 
     // Обработчик сообщений от расширения
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
             const message = event.data;
+            console.log('Received message:', message);
 
             if (message.type === 'updateState') {
-                setSearchState(message.state);
+                console.log('Updating state with:', message.state);
+                setSearchState(prevState => ({
+                    ...prevState,
+                    ...message.state,
+                    // Сохраняем результаты, если они есть в новом состоянии
+                    results: message.state.results || prevState.results,
+                    // Сохраняем буферы, если они есть в новом состоянии
+                    buffers: message.state.buffers || prevState.buffers,
+                    // Сохраняем активный буфер, если он есть в новом состоянии
+                    activeBufferId:
+                        typeof message.state.activeBufferId === 'number'
+                            ? message.state.activeBufferId
+                            : prevState.activeBufferId,
+                }));
             }
         };
 
@@ -112,24 +155,20 @@ const App: React.FC = () => {
             />
 
             <BufferPanel
-                buffers={searchState.buffers || []}
+                buffers={searchState.buffers}
                 activeBufferId={searchState.activeBufferId}
-                hasResults={(searchState.results || []).length > 0}
+                hasResults={searchState.results.length > 0}
                 onActivateBuffer={handleActivateBuffer}
                 onSaveBuffer={handleSaveBuffer}
                 onClearAllBuffers={handleClearAllBuffers}
             />
 
             <div className="results-info">
-                Found{' '}
-                {(searchState.results || []).reduce(
-                    (total, file) => total + file.matches.length,
-                    0,
-                )}{' '}
-                matches in {(searchState.results || []).length} files
+                Found {searchState.results.reduce((total, file) => total + file.matches.length, 0)}{' '}
+                matches in {searchState.results.length} files
             </div>
 
-            <ResultsList results={searchState.results || []} onOpenFile={handleOpenFile} />
+            <ResultsList results={searchState.results} onOpenFile={handleOpenFile} />
         </div>
     );
 };

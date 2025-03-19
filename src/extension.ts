@@ -1,14 +1,9 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import {
     commands,
     ExtensionContext,
     window,
     workspace,
     Uri,
-    ViewColumn,
-    WebviewPanel,
-    TextDocument,
     Position,
     Range,
     ThemeColor,
@@ -36,6 +31,9 @@ let searchState = {
     webviewView: undefined as WebviewView | undefined,
 };
 
+// Добавляем переменную для хранения результатов поиска
+let searchResults: Array<{ filePath: string; matches: Array<{ lineNumber: number; previewText: string; matchStartColumn: number; matchEndColumn: number; }> }> = [];
+
 // Провайдер для WebviewView
 class SequentialSearchViewProvider implements WebviewViewProvider {
     public static readonly viewType = 'sequentialSearcher.searchView';
@@ -52,6 +50,7 @@ class SequentialSearchViewProvider implements WebviewViewProvider {
         this._view = webviewView;
         searchState.webviewView = webviewView;
 
+        // Устанавливаем retainContextWhenHidden для самого webviewView
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [this._extensionContext.extensionUri],
@@ -139,7 +138,9 @@ export function activate(context: ExtensionContext) {
     // Регистрация провайдера для WebviewView
     const provider = new SequentialSearchViewProvider(context);
     context.subscriptions.push(
-        window.registerWebviewViewProvider(SequentialSearchViewProvider.viewType, provider),
+        window.registerWebviewViewProvider(SequentialSearchViewProvider.viewType, provider, {
+            webviewOptions: { retainContextWhenHidden: true },
+        }),
     );
 
     // Команда для фокусирования на панели поиска
@@ -156,7 +157,18 @@ export function activate(context: ExtensionContext) {
         searchState.buffers = [];
         searchState.activeBufferId = -1;
         searchState.currentFiles = [];
-        updateWebviewContent();
+        searchResults = []; // Очищаем результаты поиска
+
+        const serializedState = {
+            results: [],
+            buffers: [],
+            activeBufferId: -1,
+        };
+
+        searchState.webviewView?.webview.postMessage({
+            type: 'updateState',
+            state: serializedState,
+        });
     });
 
     // Команда для открытия файла из результатов поиска
@@ -233,20 +245,6 @@ function updateWebviewContent() {
     }
 
     try {
-        // Преобразуем URI файлов в строки для передачи в React
-        const serializedState = {
-            currentFiles: searchState.currentFiles.map(uri => uri.fsPath),
-            results: [], // Добавляем пустой массив результатов, если их нет
-            buffers: searchState.buffers.map(buffer => ({
-                id: buffer.id,
-                files: buffer.files.map(uri => uri.fsPath),
-                searchPattern: buffer.searchPattern,
-            })),
-            activeBufferId: searchState.activeBufferId,
-        };
-
-        console.log('Updating webview with state:', serializedState);
-
         // Создаем HTML для React приложения
         const scriptUri = searchState.webviewView.webview.asWebviewUri(
             Uri.joinPath(extensionUri, 'dist', 'webview.js'),
@@ -254,9 +252,6 @@ function updateWebviewContent() {
         const styleUri = searchState.webviewView.webview.asWebviewUri(
             Uri.joinPath(extensionUri, 'dist', 'webview.css'),
         );
-
-        console.log('Script URI:', scriptUri.toString());
-        console.log('Style URI:', styleUri.toString());
 
         searchState.webviewView.webview.html = `
             <!DOCTYPE html>
@@ -270,11 +265,26 @@ function updateWebviewContent() {
             <body>
                 <div id="root"></div>
                 <script>
-                    // Вызываем API только один раз и сохраняем в глобальную переменную
                     const vscode = acquireVsCodeApi();
 
-                    // Инициализируем состояние
-                    vscode.setState(${JSON.stringify(serializedState)});
+                    // Восстанавливаем состояние из хранилища VS Code
+                    const previousState = vscode.getState();
+                    if (previousState) {
+                        // Используем сохраненное состояние
+                        vscode.setState(previousState);
+                    } else {
+                        // Инициализируем новое состояние
+                        vscode.setState({
+                            searchText: '',
+                            isExclude: false,
+                            searchInFileNames: false,
+                            searchState: {
+                                results: [],
+                                buffers: [],
+                                activeBufferId: -1,
+                            }
+                        });
+                    }
 
                     // Добавляем обработчик ошибок
                     window.onerror = function(message, source, lineno, colno, error) {
@@ -337,7 +347,15 @@ async function performSearch(
             async () => {
                 // Массив для хранения результатов
                 const matchedFiles: Uri[] = [];
-                const searchResults: any[] = [];
+                const newSearchResults: Array<{
+                    filePath: string;
+                    matches: Array<{
+                        lineNumber: number;
+                        previewText: string;
+                        matchStartColumn: number;
+                        matchEndColumn: number;
+                    }>;
+                }> = [];
 
                 // Создать регулярное выражение для поиска
                 let searchRegex;
@@ -421,13 +439,13 @@ async function performSearch(
                             matchedFiles.push(fileUri);
 
                             if (!isExclude && fileMatches.length > 0) {
-                                searchResults.push({
+                                newSearchResults.push({
                                     filePath: fileUri.fsPath,
                                     matches: fileMatches,
                                 });
                             } else if (isExclude) {
                                 // Для исключающего поиска добавляем файл без совпадений
-                                searchResults.push({
+                                newSearchResults.push({
                                     filePath: fileUri.fsPath,
                                     matches: [
                                         {
@@ -445,8 +463,9 @@ async function performSearch(
                     }
                 }
 
-                // Обновляем состояние поиска
+                // Обновляем состояние поиска и сохраняем результаты
                 searchState.currentFiles = matchedFiles;
+                searchResults = newSearchResults; // Сохраняем в глобальную переменную
 
                 // Отправляем результаты в webview
                 const serializedState = {
@@ -482,25 +501,31 @@ function saveCurrentResultsToBuffer(): void {
     const maxId =
         searchState.buffers.length > 0 ? Math.max(...searchState.buffers.map(b => b.id)) : -1;
 
-    // Получить текущий поисковый запрос из webview
-    let searchPattern = '';
-
-    if (searchState.webviewView) {
-        // Мы не можем напрямую получить значения из webview, поэтому используем последний поисковый запрос
-        searchPattern = 'Last search';
-    }
-
     // Создать новый буфер
     const newBuffer: SearchBuffer = {
         id: maxId + 1,
         files: [...searchState.currentFiles],
-        searchPattern,
+        searchPattern: 'Last search',
     };
 
     searchState.buffers.push(newBuffer);
     searchState.activeBufferId = newBuffer.id;
 
-    updateWebviewContent();
+    // Отправляем обновленное состояние через postMessage вместо updateWebviewContent
+    const serializedState = {
+        results: [], // Очищаем результаты при создании нового буфера
+        buffers: searchState.buffers.map(buffer => ({
+            id: buffer.id,
+            files: buffer.files.map(uri => uri.fsPath),
+            searchPattern: buffer.searchPattern,
+        })),
+        activeBufferId: searchState.activeBufferId,
+    };
+
+    searchState.webviewView?.webview.postMessage({
+        type: 'updateState',
+        state: serializedState,
+    });
 }
 
 // Активация буфера
@@ -515,7 +540,21 @@ function activateBuffer(bufferId: number): void {
     searchState.activeBufferId = bufferId;
     searchState.currentFiles = [...buffer.files];
 
-    updateWebviewContent();
+    // Отправляем обновленное состояние через postMessage вместо updateWebviewContent
+    const serializedState = {
+        results: [], // Очищаем результаты при активации буфера
+        buffers: searchState.buffers.map(buffer => ({
+            id: buffer.id,
+            files: buffer.files.map(uri => uri.fsPath),
+            searchPattern: buffer.searchPattern,
+        })),
+        activeBufferId: searchState.activeBufferId,
+    };
+
+    searchState.webviewView?.webview.postMessage({
+        type: 'updateState',
+        state: serializedState,
+    });
 }
 
 // Экранирование специальных символов в регулярных выражениях

@@ -46,6 +46,9 @@ const webviewConfig = {
 	platform: 'browser',
 	sourcemap: !production,
 	minify: production,
+	jsx: 'transform',
+	jsxFactory: 'React.createElement',
+	jsxFragment: 'React.Fragment',
 	plugins: [
 		copy({
 			assets: [
