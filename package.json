@@ -17,6 +17,14 @@
     "activationEvents": [],
     "main": "./dist/extension.js",
     "contributes": {
+        "views": {
+            "explorer": [
+                {
+                    "id": "sequentialSearcher.searchView",
+                    "name": "Sequential Search"
+                }
+            ]
+        },
         "commands": [
             {
                 "command": "searcher.startSearch",

@@ -13,6 +13,11 @@ import {
     Range,
     ThemeColor,
     Selection,
+    WebviewView,
+    WebviewViewProvider,
+    WebviewViewResolveContext,
+    CancellationToken,
+    Disposable,
 } from 'vscode';
 
 // Тип для хранения результатов поиска
@@ -27,8 +32,74 @@ let searchState = {
     currentFiles: [] as Uri[],
     buffers: [] as SearchBuffer[],
     activeBufferId: -1,
-    webviewPanel: undefined as WebviewPanel | undefined,
+    webviewView: undefined as WebviewView | undefined,
 };
+
+// Провайдер для WebviewView
+class SequentialSearchViewProvider implements WebviewViewProvider {
+    public static readonly viewType = 'sequentialSearcher.searchView';
+    private _view?: WebviewView;
+    private _disposables: Disposable[] = [];
+
+    constructor(private readonly _extensionContext: ExtensionContext) {}
+
+    public resolveWebviewView(
+        webviewView: WebviewView,
+        context: WebviewViewResolveContext,
+        token: CancellationToken,
+    ) {
+        this._view = webviewView;
+        searchState.webviewView = webviewView;
+
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [Uri.joinPath(this._extensionContext.extensionUri, 'media')],
+        };
+
+        webviewView.webview.onDidReceiveMessage(
+            async message => {
+                switch (message.command) {
+                    case 'search':
+                        await performSearch(
+                            message.searchText,
+                            message.isExclude,
+                            message.searchInFileNames,
+                        );
+                        break;
+                    case 'saveBuffer':
+                        saveCurrentResultsToBuffer();
+                        break;
+                    case 'activateBuffer':
+                        activateBuffer(message.bufferId);
+                        break;
+                    case 'clearAllBuffers':
+                        await commands.executeCommand('searcher.clearAllBuffers');
+                        break;
+                    case 'openFile':
+                        await commands.executeCommand(
+                            'searcher.openFile',
+                            message.filePath,
+                            message.searchText,
+                        );
+                        break;
+                }
+            },
+            undefined,
+            this._disposables,
+        );
+
+        updateWebviewContent();
+    }
+
+    public dispose() {
+        while (this._disposables.length) {
+            const disposable = this._disposables.pop();
+            if (disposable) {
+                disposable.dispose();
+            }
+        }
+    }
+}
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -37,14 +108,11 @@ export function activate(context: ExtensionContext) {
     // This line of code will only be executed once when your extension is activated
     console.log('Sequential Searcher extension is now active');
 
-    // Команда для открытия панели поиска
-    const openSearchPanelCommand = commands.registerCommand('searcher.startSearch', () => {
-        if (searchState.webviewPanel) {
-            searchState.webviewPanel.reveal();
-        } else {
-            createSearchPanel(context);
-        }
-    });
+    // Регистрация провайдера для WebviewView
+    const provider = new SequentialSearchViewProvider(context);
+    context.subscriptions.push(
+        window.registerWebviewViewProvider(SequentialSearchViewProvider.viewType, provider),
+    );
 
     // Команда для очистки всех буферов
     const clearAllBuffersCommand = commands.registerCommand('searcher.clearAllBuffers', () => {
@@ -105,70 +173,12 @@ export function activate(context: ExtensionContext) {
         },
     );
 
-    context.subscriptions.push(openSearchPanelCommand, clearAllBuffersCommand, openFileCommand);
-}
-
-// Создание панели поиска
-function createSearchPanel(context: ExtensionContext) {
-    searchState.webviewPanel = window.createWebviewPanel(
-        'sequentialSearcher',
-        'Sequential Search',
-        ViewColumn.Beside,
-        {
-            enableScripts: true,
-            retainContextWhenHidden: true,
-            localResourceRoots: [Uri.joinPath(context.extensionUri, 'media')],
-        },
-    );
-
-    // Обработка сообщений от webview
-    searchState.webviewPanel.webview.onDidReceiveMessage(
-        async message => {
-            switch (message.command) {
-                case 'search':
-                    await performSearch(
-                        message.searchText,
-                        message.isExclude,
-                        message.searchInFileNames,
-                    );
-                    break;
-                case 'saveBuffer':
-                    saveCurrentResultsToBuffer();
-                    break;
-                case 'activateBuffer':
-                    activateBuffer(message.bufferId);
-                    break;
-                case 'clearAllBuffers':
-                    await commands.executeCommand('searcher.clearAllBuffers');
-                    break;
-                case 'openFile':
-                    await commands.executeCommand(
-                        'searcher.openFile',
-                        message.filePath,
-                        message.searchText,
-                    );
-                    break;
-            }
-        },
-        undefined,
-        context.subscriptions,
-    );
-
-    // Обработка закрытия панели
-    searchState.webviewPanel.onDidDispose(
-        () => {
-            searchState.webviewPanel = undefined;
-        },
-        null,
-        context.subscriptions,
-    );
-
-    updateWebviewContent();
+    context.subscriptions.push(clearAllBuffersCommand, openFileCommand);
 }
 
 // Обновление содержимого webview
 function updateWebviewContent() {
-    if (!searchState.webviewPanel) {
+    if (!searchState.webviewView) {
         return;
     }
 
@@ -214,7 +224,7 @@ function updateWebviewContent() {
               } files)</div>`
             : '';
 
-    searchState.webviewPanel.webview.html = `
+    searchState.webviewView.webview.html = `
 		<!DOCTYPE html>
 		<html lang="en">
 		<head>
@@ -229,17 +239,22 @@ function updateWebviewContent() {
 				}
 				.search-container {
 					display: flex;
+					flex-direction: column;
 					margin-bottom: 10px;
+					gap: 8px;
 				}
 				.search-input {
-					flex: 1;
+					width: 100%;
 					padding: 6px;
 					border: 1px solid var(--vscode-input-border);
 					background-color: var(--vscode-input-background);
 					color: var(--vscode-input-foreground);
 				}
+				.search-actions {
+					display: flex;
+					align-items: center;
+				}
 				.search-button {
-					margin-left: 5px;
 					padding: 6px 12px;
 					background-color: var(--vscode-button-background);
 					color: var(--vscode-button-foreground);
@@ -252,8 +267,8 @@ function updateWebviewContent() {
 				.search-options {
 					display: flex;
 					align-items: center;
-					margin-left: 10px;
 					gap: 10px;
+					margin-left: auto;
 				}
 				.option-toggle {
 					display: flex;
@@ -264,6 +279,8 @@ function updateWebviewContent() {
 					display: flex;
 					margin: 10px 0;
 					align-items: center;
+					flex-wrap: wrap;
+					gap: 5px;
 				}
 				.buffer-buttons {
 					display: flex;
@@ -301,7 +318,7 @@ function updateWebviewContent() {
 				.results-container {
 					margin-top: 10px;
 					border: 1px solid var(--vscode-panel-border);
-					height: calc(100vh - 150px);
+					height: calc(100vh - 250px);
 					overflow: auto;
 				}
 				.file-item {
@@ -329,17 +346,19 @@ function updateWebviewContent() {
 		<body>
 			<div class="search-container">
 				<input type="text" id="searchInput" class="search-input" placeholder="Search regex pattern...">
-				<div class="search-options">
-					<div class="option-toggle">
-						<input type="checkbox" id="excludeToggle">
-						<label for="excludeToggle">Exclude</label>
-					</div>
-					<div class="option-toggle">
-						<input type="checkbox" id="fileNameToggle">
-						<label for="fileNameToggle">File Names</label>
+				<div class="search-actions">
+					<button class="search-button" onclick="search()">Search</button>
+					<div class="search-options">
+						<div class="option-toggle">
+							<input type="checkbox" id="excludeToggle">
+							<label for="excludeToggle">Exclude</label>
+						</div>
+						<div class="option-toggle">
+							<input type="checkbox" id="fileNameToggle">
+							<label for="fileNameToggle">File Names</label>
+						</div>
 					</div>
 				</div>
-				<button class="search-button" onclick="search()">Search</button>
 			</div>
 
 			<div class="buffer-container">
@@ -347,9 +366,10 @@ function updateWebviewContent() {
 					${bufferButtons}
 					${addBufferButton}
 				</div>
-				${activeBufferInfo}
 				<button class="clear-button" onclick="clearAllBuffers()">Clear All</button>
 			</div>
+
+			${activeBufferInfo}
 
 			<div class="results-info">
 				Found ${searchState.currentFiles.length} files
@@ -445,7 +465,7 @@ async function performSearch(
         // Показать индикатор прогресса
         await window.withProgress(
             {
-                location: { viewId: 'explorer' },
+                location: { viewId: 'sequentialSearcher.searchView' },
                 title: `${isExclude ? 'Excluding' : 'Searching for'} "${searchText}" in ${
                     searchInFileNames ? 'file names' : 'file contents'
                 }`,
@@ -534,7 +554,7 @@ function saveCurrentResultsToBuffer(): void {
     // Получить текущий поисковый запрос из webview
     let searchPattern = '';
 
-    if (searchState.webviewPanel) {
+    if (searchState.webviewView) {
         // Мы не можем напрямую получить значения из webview, поэтому используем последний поисковый запрос
         searchPattern = 'Last search';
     }
