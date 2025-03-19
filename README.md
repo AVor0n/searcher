@@ -1,71 +1,78 @@
-# searcher README
+# Sequential Searcher
 
-This is the README for your extension "searcher". After writing up a brief description, we recommend including the following sections.
+Sequential Searcher - это расширение для VS Code, которое предоставляет мощные возможности последовательного поиска с поддержкой буферов и исключающего поиска.
 
-## Features
+## Возможности
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- **Последовательный поиск**: Выполняйте поиск поэтапно, сохраняя промежуточные результаты в буферы
+- **Поиск по регулярным выражениям**: Используйте мощь регулярных выражений для поиска
+- **Исключающий поиск**: Находите файлы, которые НЕ содержат определенный текст или шаблон
+- **Поиск по именам файлов**: Ищите по путям и именам файлов вместо их содержимого
+- **Буферы результатов**: Сохраняйте результаты поиска в буферы для дальнейшего использования
 
-For example if there is an image subfolder under your extension project workspace:
+## Использование
 
-\!\[feature X\]\(images/feature-x.png\)
+### Открытие панели поиска
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+1. Нажмите `Ctrl+Shift+P` (Windows/Linux) или `Cmd+Shift+P` (Mac) для открытия палитры команд
+2. Введите "Sequential Search: Open Search Panel" и выберите эту команду
 
-## Requirements
+### Выполнение поиска
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+1. Введите текст или регулярное выражение в поле поиска
+2. Используйте переключатели для настройки поиска:
+   - **Exclude**: Найти файлы, которые НЕ содержат шаблон
+   - **File Names**: Искать в именах файлов вместо их содержимого
+3. Нажмите кнопку "Search" или клавишу Enter
 
-## Extension Settings
+### Работа с буферами
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+- Нажмите кнопку "+" для сохранения текущих результатов в новый буфер
+- Нажмите на номер буфера для активации этого буфера
+- Когда буфер активен, поиск выполняется только среди файлов в этом буфере
+- Нажмите "Clear All" для очистки всех буферов
 
-For example:
+### Просмотр результатов
 
-This extension contributes the following settings:
+- Список найденных файлов отображается в нижней части панели
+- Нажмите на файл, чтобы открыть его в редакторе
+- При открытии файла все вхождения поискового запроса будут подсвечены
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+## Примеры использования
 
-## Known Issues
+### Пример 1: Поиск файлов с определенным текстом, но без другого текста
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+1. Введите первый шаблон (например, "function") и выполните поиск
+2. Сохраните результаты в буфер, нажав "+"
+3. Введите второй шаблон (например, "deprecated"), установите флажок "Exclude"
+4. Выполните поиск - вы получите файлы, которые содержат "function", но не содержат "deprecated"
 
-## Release Notes
+### Пример 2: Поиск по именам файлов с определенным расширением
 
-Users appreciate release notes as you update your extension.
+1. Введите регулярное выражение (например, "\.tsx$")
+2. Установите флажок "File Names"
+3. Выполните поиск - вы получите все файлы с расширением .tsx
 
-### 1.0.0
+## Требования
 
-Initial release of ...
+- VS Code версии 1.98.0 или выше
 
-### 1.0.1
+## Настройки расширения
 
-Fixed issue #.
+Расширение предоставляет следующие настройки:
 
-### 1.1.0
+- `sequentialSearcher.includePattern`: Шаблон для включения файлов в поиск (glob-шаблон)
+- `sequentialSearcher.excludePattern`: Шаблон для исключения файлов из поиска (glob-шаблон)
 
-Added features X, Y, and Z.
+## Известные проблемы
 
----
+- Поиск в больших файлах может занимать продолжительное время
+- При некорректном регулярном выражении поиск выполняется как обычный текстовый поиск
 
-## Following extension guidelines
+## Обратная связь и вклад в проект
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+Если у вас есть предложения по улучшению или вы нашли ошибку, пожалуйста, создайте issue в репозитории проекта.
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+## Лицензия
 
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+[MIT](LICENSE)
