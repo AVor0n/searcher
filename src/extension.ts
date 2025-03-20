@@ -16,6 +16,7 @@ import {
 } from 'vscode';
 import * as path from 'path';
 import ignore from 'ignore';
+import { minimatch } from 'minimatch';
 
 // Тип для хранения результатов поиска
 interface SearchBuffer {
@@ -400,7 +401,7 @@ async function performSearch(
 
                         // Проверяем паттерны из search.exclude
                         const isExcludedBySearchConfig = excludePatterns.some(pattern =>
-                            new RegExp(pattern.replace(/\*/g, '.*')).test(relativePath),
+                            minimatch(relativePath, pattern, { dot: true }),
                         );
 
                         // Проверяем правила из .gitignore
