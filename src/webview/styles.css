@@ -1,13 +1,17 @@
 body {
   font-family: var(--vscode-font-family);
-  padding: 10px;
   color: var(--vscode-foreground);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .app-container {
   display: flex;
   flex-direction: column;
+  padding: 10px;
   height: 100vh;
+  box-sizing: border-box;
 }
 
 .search-container {
@@ -18,7 +22,7 @@ body {
 }
 
 .search-input {
-  width: 100%;
+  flex-grow: 1;
   padding: 6px;
   border: 1px solid var(--vscode-input-border);
   background-color: var(--vscode-input-background);
@@ -46,7 +50,6 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-left: auto;
 }
 
 .option-toggle {
@@ -105,7 +108,7 @@ body {
 .results-container {
   margin-top: 10px;
   border: 1px solid var(--vscode-panel-border);
-  height: calc(100vh - 250px);
+  height: 100%;
   overflow: auto;
 }
 

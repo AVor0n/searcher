@@ -33,25 +33,22 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 
     return (
         <div className="search-container">
-            <input
-                type="text"
-                className="search-input"
-                placeholder="Search regex pattern..."
-                value={searchText}
-                onChange={e => setSearchText(e.target.value)}
-                onKeyPress={handleKeyPress}
-                disabled={isSearching}
-            />
-
             <div className="search-actions">
-                <button
-                    className={`search-button ${isSearching ? 'loading' : ''}`}
-                    onClick={onSearch}
+                <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search regex pattern..."
+                    value={searchText}
+                    onChange={e => setSearchText(e.target.value)}
+                    onKeyPress={handleKeyPress}
                     disabled={isSearching}
-                >
+                />
+                <button className={`search-button`} onClick={onSearch} disabled={isSearching}>
                     {isSearching ? 'Searching...' : 'Search'}
                 </button>
+            </div>
 
+            <div className="search-actions">
                 <div className="search-options">
                     <div className="option-toggle">
                         <input

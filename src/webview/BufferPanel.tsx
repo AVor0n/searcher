@@ -44,9 +44,11 @@ export const BufferPanel: React.FC<BufferPanelProps> = ({
                 </button>
             </div>
 
-            <button className="clear-button" onClick={onClearAllBuffers}>
-                Clear All
-            </button>
+            {buffers.length > 0 && (
+                <button className="clear-button" onClick={onClearAllBuffers}>
+                    Clear All
+                </button>
+            )}
         </div>
     );
 };
