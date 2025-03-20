@@ -363,7 +363,18 @@ async function performSearch(
                 .map(([pattern]) => pattern);
 
             // Добавляем стандартные исключения
-            excludePatterns.push('**/node_modules/**');
+            const defaultExcludes = [
+                '**/node_modules/**',
+                '**/.venv/**',
+                '**/.vscode/**',
+                '**/.idea/**',
+                '**/.settings/**',
+                '**/package-lock.json',
+                '**/yarn.lock',
+                '**/pnpm-lock.yaml',
+            ];
+
+            excludePatterns.push(...defaultExcludes);
 
             // Создаем экземпляр ignore
             const ig = ignore();
