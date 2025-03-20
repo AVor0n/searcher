@@ -11,6 +11,8 @@ interface SearchPanelProps {
     setCaseSensitive: (value: boolean) => void;
     onSearch: () => void;
     isSearching: boolean;
+    useRegex: boolean;
+    setUseRegex: (value: boolean) => void;
 }
 
 export const SearchPanel: React.FC<SearchPanelProps> = ({
@@ -24,6 +26,8 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
     setCaseSensitive,
     onSearch,
     isSearching,
+    useRegex,
+    setUseRegex,
 }) => {
     const handleKeyPress = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !isSearching) {
@@ -78,6 +82,16 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
                             onChange={e => setCaseSensitive(e.target.checked)}
                         />
                         <label htmlFor="caseSensitiveToggle">Case Sensitive</label>
+                    </div>
+
+                    <div className="option-toggle">
+                        <input
+                            type="checkbox"
+                            id="regexToggle"
+                            checked={useRegex}
+                            onChange={e => setUseRegex(e.target.checked)}
+                        />
+                        <label htmlFor="regexToggle">Regex</label>
                     </div>
                 </div>
             </div>

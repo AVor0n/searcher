@@ -44,6 +44,7 @@ const App: React.FC = () => {
         activeBufferId: -1,
     });
     const [isSearching, setIsSearching] = useState(false);
+    const [useRegex, setUseRegex] = useState(false);
 
     // Обработчик сообщений от расширения
     useEffect(() => {
@@ -51,6 +52,9 @@ const App: React.FC = () => {
             const message = event.data;
             console.log('Received message:', message);
 
+            if (message.type === 'log') {
+                console.log('Log:', message.state);
+            }
             if (message.type === 'updateState') {
                 console.log('Updating state with:', message.state);
                 setSearchState(prevState => ({
@@ -91,6 +95,7 @@ const App: React.FC = () => {
             isExclude,
             searchInFileNames,
             caseSensitive,
+            useRegex,
         });
     };
 
@@ -132,6 +137,8 @@ const App: React.FC = () => {
                 setCaseSensitive={setCaseSensitive}
                 onSearch={handleSearch}
                 isSearching={isSearching}
+                useRegex={useRegex}
+                setUseRegex={setUseRegex}
             />
 
             <BufferPanel

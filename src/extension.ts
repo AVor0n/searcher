@@ -48,6 +48,40 @@ let searchResults: Array<{
 // В начале файла, где определены другие глобальные переменные
 let searchText = ''; // Добавляем переменную для хранения текущего поискового запроса
 
+// Кэш для содержимого файлов
+const fileContentCache = new Map<
+    string,
+    {
+        content: string;
+        timestamp: number;
+    }
+>();
+
+// Максимальное время жизни кэша (5 минут)
+const CACHE_TTL = 5 * 60 * 1000;
+
+let currentSearchAbortController: AbortController | null = null;
+
+async function getFileContent(fileUri: Uri): Promise<string> {
+    const filePath = fileUri.fsPath;
+    const now = Date.now();
+    const cached = fileContentCache.get(filePath);
+
+    if (cached && now - cached.timestamp < CACHE_TTL) {
+        return cached.content;
+    }
+
+    const document = await workspace.openTextDocument(fileUri);
+    const content = document.getText();
+
+    fileContentCache.set(filePath, {
+        content,
+        timestamp: now,
+    });
+
+    return content;
+}
+
 // Провайдер для WebviewView
 class SequentialSearchViewProvider implements WebviewViewProvider {
     public static readonly viewType = 'sequentialSearcher.searchView';
@@ -79,6 +113,7 @@ class SequentialSearchViewProvider implements WebviewViewProvider {
                             message.isExclude,
                             message.searchInFileNames,
                             message.caseSensitive,
+                            message.useRegex,
                         );
                         break;
                     case 'saveBuffer':
@@ -336,7 +371,16 @@ async function performSearch(
     isExclude: boolean = false,
     searchInFileNames: boolean = false,
     caseSensitive: boolean = false,
+    useRegex: boolean = false,
 ): Promise<void> {
+    // Отменяем предыдущий поиск
+    if (currentSearchAbortController) {
+        currentSearchAbortController.abort();
+    }
+
+    currentSearchAbortController = new AbortController();
+    const { signal } = currentSearchAbortController;
+
     try {
         // Сохраняем текущий поисковый запрос
         searchText = searchText;
@@ -430,148 +474,87 @@ async function performSearch(
                 title: `${isExclude ? 'Excluding' : 'Searching for'} "${searchText}"...`,
             },
             async () => {
-                // Массив для хранения результатов
-                const matchedFiles: Uri[] = [];
-                const newSearchResults: Array<{
-                    filePath: string;
-                    matches: Array<{
-                        lineNumber: number;
-                        previewText: string;
-                        matchStartColumn: number;
-                        matchEndColumn: number;
-                    }>;
-                    displayPath: string;
-                }> = [];
-
                 // Сортируем файлы перед поиском для стабильного порядка
-                const sortedFilesToSearch = [...filesToSearch].sort((a, b) =>
-                    a.fsPath.localeCompare(b.fsPath),
-                );
+                const sortedFilesToSearch = filesToSearch;
+                // const sortedFilesToSearch = [...filesToSearch].sort((a, b) =>
+                //     a.fsPath.localeCompare(b.fsPath),
+                // );
 
-                // Создать регулярное выражение для поиска
+                // Компилируем регулярное выражение или подготавливаем текст для поиска
                 let searchRegex;
-                try {
-                    searchRegex = new RegExp(searchText, caseSensitive ? 'g' : 'gi');
-                } catch (regexError) {
-                    searchRegex = new RegExp(escapeRegExp(searchText), caseSensitive ? 'g' : 'gi');
+                let searchLower;
+
+                if (useRegex) {
+                    try {
+                        searchRegex = new RegExp(searchText, caseSensitive ? 'g' : 'gi');
+                    } catch (regexError) {
+                        window.showErrorMessage('Invalid regular expression');
+                        return;
+                    }
+                } else if (!caseSensitive) {
+                    searchLower = searchText.toLowerCase();
                 }
 
-                // Обрабатываем каждый файл
-                for (const fileUri of sortedFilesToSearch) {
-                    try {
-                        let hasMatch = false;
-                        const fileMatches = [];
+                // Разбиваем файлы на чанки для параллельной обработки
+                const chunkSize = 100;
+                const chunks = [];
+                for (let i = 0; i < sortedFilesToSearch.length; i += chunkSize) {
+                    chunks.push(sortedFilesToSearch.slice(i, i + chunkSize));
+                }
 
-                        if (searchInFileNames) {
-                            // Поиск по имени файла (включая путь)
-                            const relativePath = workspace.asRelativePath(fileUri);
-                            // Добавляем './' к относительному пути
-                            const displayPath = './' + relativePath;
-                            hasMatch = searchRegex.test(relativePath);
-                            searchRegex.lastIndex = 0;
+                const BATCH_SIZE = 20;
+                let processedResults = 0;
+                const results = [];
 
-                            if (hasMatch && !isExclude) {
-                                let matchIndex;
-                                if (caseSensitive) {
-                                    matchIndex = relativePath.indexOf(searchText);
-                                } else {
-                                    const lowerPath = relativePath.toLowerCase();
-                                    const lowerSearch = searchText.toLowerCase();
-                                    matchIndex = lowerPath.indexOf(lowerSearch);
-                                }
+                for (const chunk of chunks) {
+                    if (signal.aborted) {
+                        throw new Error('Search cancelled');
+                    }
+                    const chunkResults = await processChunk(
+                        chunk,
+                        searchText,
+                        searchRegex,
+                        searchLower,
+                        isExclude,
+                        searchInFileNames,
+                        caseSensitive,
+                    );
+                    results.push(chunkResults);
 
-                                if (matchIndex !== -1) {
-                                    fileMatches.push({
-                                        lineNumber: 1,
-                                        previewText: displayPath,
-                                        matchStartColumn: matchIndex + 2, // +2 для учета './'
-                                        matchEndColumn: matchIndex + searchText.length + 2,
-                                    });
-                                }
-                            }
-                        } else {
-                            // Проверяем, является ли файл бинарным
-                            if (isBinaryPath(fileUri.fsPath)) {
-                                // Пропускаем бинарные файлы при поиске по содержимому
-                                continue;
-                            }
+                    // Отправляем результаты батчами
+                    processedResults += chunkResults.results.length;
+                    if (processedResults >= BATCH_SIZE) {
+                        // Собираем все результаты до текущего момента
+                        const currentResults = results.flatMap(r => r.results);
 
-                            try {
-                                // Поиск по содержимому файла
-                                const document = await workspace.openTextDocument(fileUri);
-                                const content = document.getText();
+                        searchState.webviewView?.webview.postMessage({
+                            type: 'updateState',
+                            state: {
+                                results: currentResults,
+                                buffers: searchState.buffers.map(buffer => ({
+                                    id: buffer.id,
+                                    files: buffer.files.map(uri => uri.fsPath),
+                                    searchPattern: buffer.searchPattern,
+                                })),
+                                activeBufferId: searchState.activeBufferId,
+                                isPartialResult: true,
+                            },
+                        });
 
-                                // Сбрасываем lastIndex для повторного использования регулярного выражения
-                                searchRegex.lastIndex = 0;
-
-                                let match;
-                                while ((match = searchRegex.exec(content)) !== null) {
-                                    hasMatch = true;
-
-                                    if (!isExclude) {
-                                        const matchPosition = document.positionAt(match.index);
-                                        const lineNumber = matchPosition.line + 1;
-                                        const line = document.lineAt(matchPosition.line).text;
-
-                                        // Получаем позиции начала и конца совпадения в строке
-                                        const startPos = document.positionAt(match.index);
-                                        const endPos = document.positionAt(
-                                            match.index + match[0].length,
-                                        );
-
-                                        fileMatches.push({
-                                            lineNumber,
-                                            previewText: line,
-                                            matchStartColumn: startPos.character,
-                                            matchEndColumn: endPos.character,
-                                        });
-                                    }
-                                }
-                            } catch (docError) {
-                                // Если не удалось открыть файл как текстовый, считаем его бинарным и пропускаем
-                                console.log(
-                                    `Skipping binary or inaccessible file: ${fileUri.fsPath}`,
-                                );
-                                continue;
-                            }
-                        }
-
-                        // Добавляем файл в результаты в зависимости от типа поиска
-                        if ((hasMatch && !isExclude) || (!hasMatch && isExclude)) {
-                            matchedFiles.push(fileUri);
-
-                            if (!isExclude && fileMatches.length > 0) {
-                                newSearchResults.push({
-                                    filePath: fileUri.fsPath, // Сохраняем абсолютный путь
-                                    matches: fileMatches,
-                                    displayPath: './' + workspace.asRelativePath(fileUri), // Добавляем поле для отображения
-                                });
-                            } else if (isExclude) {
-                                newSearchResults.push({
-                                    filePath: fileUri.fsPath, // Сохраняем абсолютный путь
-                                    matches: [
-                                        {
-                                            lineNumber: 1,
-                                            previewText: 'File excluded from search',
-                                            matchStartColumn: 0,
-                                            matchEndColumn: 0,
-                                        },
-                                    ],
-                                    displayPath: './' + workspace.asRelativePath(fileUri), // Добавляем поле для отображения
-                                });
-                            }
-                        }
-                    } catch (err) {
-                        console.error(`Error processing file ${fileUri.fsPath}:`, err);
+                        // Сбрасываем счетчик
+                        processedResults = 0;
                     }
                 }
 
+                // Объединяем результаты (используем уже объявленные переменные)
+                searchResults = results.flatMap(r => r.results);
+                searchState.currentFiles = results.flatMap(r => r.matchedFiles);
+
                 // Сортируем результаты поиска
-                newSearchResults.sort((a, b) => a.filePath.localeCompare(b.filePath));
+                searchResults.sort((a, b) => a.filePath.localeCompare(b.filePath));
 
                 // Обновляем состояние поиска и сохраняем результаты
-                searchState.currentFiles = matchedFiles;
-                searchResults = newSearchResults;
+                searchState.currentFiles = searchResults.map(r => Uri.file(r.filePath));
 
                 // Отправляем результаты в webview
                 const serializedState = {
@@ -591,6 +574,10 @@ async function performSearch(
             },
         );
     } catch (error) {
+        if (error instanceof Error && error.message === 'Search cancelled') {
+            console.log('Search was cancelled');
+            return;
+        }
         console.error('Search error:', error);
         window.showErrorMessage(`Search failed: ${error}`);
     }
@@ -739,6 +726,136 @@ function isBinaryPath(filePath: string): boolean {
 
     const extension = path.extname(filePath).toLowerCase();
     return binaryExtensions.includes(extension);
+}
+
+// Добавляем перед функцией performSearch
+async function processChunk(
+    chunk: Uri[],
+    searchText: string,
+    searchRegex: RegExp | undefined,
+    searchLower: string | undefined,
+    isExclude: boolean,
+    searchInFileNames: boolean,
+    caseSensitive: boolean,
+) {
+    const chunkResults = [];
+    const chunkMatchedFiles = [];
+
+    for (const fileUri of chunk) {
+        try {
+            let hasMatch = false;
+            const fileMatches = [];
+
+            if (searchInFileNames) {
+                const relativePath = workspace.asRelativePath(fileUri);
+                if (searchRegex) {
+                    hasMatch = searchRegex.test(relativePath);
+                    searchRegex.lastIndex = 0;
+                } else if (!caseSensitive) {
+                    hasMatch = relativePath.toLowerCase().includes(searchLower!);
+                } else {
+                    hasMatch = relativePath.includes(searchText);
+                }
+
+                // Добавляем совпадение для файла, если он найден и это не исключающий поиск
+                if ((hasMatch && !isExclude) || (!hasMatch && isExclude)) {
+                    fileMatches.push({
+                        lineNumber: 1,
+                        previewText: relativePath,
+                        matchStartColumn: 0,
+                        matchEndColumn: relativePath.length,
+                    });
+                }
+            } else {
+                const content = await getFileContent(fileUri);
+                if (!isBinaryPath(fileUri.fsPath)) {
+                    if (searchRegex) {
+                        searchRegex.lastIndex = 0;
+                        let match;
+                        while ((match = searchRegex.exec(content)) !== null) {
+                            hasMatch = true;
+                            if (!isExclude) {
+                                const lines = content.slice(0, match.index).split('\n');
+                                const lineNumber = lines.length;
+                                const lineStart = content.lastIndexOf('\n', match.index) + 1;
+                                const lineEnd = content.indexOf('\n', match.index);
+                                const line = content.slice(
+                                    lineStart,
+                                    lineEnd === -1 ? undefined : lineEnd,
+                                );
+
+                                fileMatches.push({
+                                    lineNumber,
+                                    previewText: line,
+                                    matchStartColumn: match.index - lineStart,
+                                    matchEndColumn: match.index - lineStart + match[0].length,
+                                });
+                            }
+                        }
+                    } else {
+                        const searchContent = caseSensitive ? content : content.toLowerCase();
+                        const searchFor = caseSensitive ? searchText : searchText.toLowerCase();
+                        hasMatch = searchContent.includes(searchFor);
+
+                        // Добавляем совпадения только если это не исключающий поиск
+                        if (hasMatch && !isExclude) {
+                            let pos = 0;
+                            while ((pos = searchContent.indexOf(searchFor, pos)) !== -1) {
+                                const lines = content.slice(0, pos).split('\n');
+                                const lineNumber = lines.length;
+                                const lineStart = content.lastIndexOf('\n', pos) + 1;
+                                const lineEnd = content.indexOf('\n', pos);
+                                const line = content.slice(
+                                    lineStart,
+                                    lineEnd === -1 ? undefined : lineEnd,
+                                );
+
+                                fileMatches.push({
+                                    lineNumber,
+                                    previewText: line,
+                                    matchStartColumn: pos - lineStart,
+                                    matchEndColumn: pos - lineStart + searchText.length,
+                                });
+                                pos += searchFor.length;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Добавляем файл в результаты, если:
+            // 1. Найдено совпадение и это не исключающий поиск, ИЛИ
+            // 2. Не найдено совпадение и это исключающий поиск
+            if ((hasMatch && !isExclude) || (!hasMatch && isExclude)) {
+                chunkMatchedFiles.push(fileUri);
+                if (!isExclude && fileMatches.length > 0) {
+                    chunkResults.push({
+                        filePath: fileUri.fsPath,
+                        matches: fileMatches,
+                        displayPath: './' + workspace.asRelativePath(fileUri),
+                    });
+                } else if (isExclude && !hasMatch) {
+                    // Добавляем файл в результаты для исключающего поиска
+                    chunkResults.push({
+                        filePath: fileUri.fsPath,
+                        matches: [
+                            {
+                                lineNumber: 1,
+                                previewText: 'File does not contain search pattern',
+                                matchStartColumn: 0,
+                                matchEndColumn: 0,
+                            },
+                        ],
+                        displayPath: './' + workspace.asRelativePath(fileUri),
+                    });
+                }
+            }
+        } catch (err) {
+            console.error(`Error processing file ${fileUri.fsPath}:`, err);
+        }
+    }
+
+    return { results: chunkResults, matchedFiles: chunkMatchedFiles };
 }
 
 // This method is called when your extension is deactivated
