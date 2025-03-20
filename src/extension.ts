@@ -42,6 +42,7 @@ let searchResults: Array<{
         matchStartColumn: number;
         matchEndColumn: number;
     }>;
+    displayPath: string;
 }> = [];
 
 // В начале файла, где определены другие глобальные переменные
@@ -439,6 +440,7 @@ async function performSearch(
                         matchStartColumn: number;
                         matchEndColumn: number;
                     }>;
+                    displayPath: string;
                 }> = [];
 
                 // Сортируем файлы перед поиском для стабильного порядка
@@ -540,12 +542,13 @@ async function performSearch(
 
                             if (!isExclude && fileMatches.length > 0) {
                                 newSearchResults.push({
-                                    filePath: './' + workspace.asRelativePath(fileUri), // Добавляем './'
+                                    filePath: fileUri.fsPath, // Сохраняем абсолютный путь
                                     matches: fileMatches,
+                                    displayPath: './' + workspace.asRelativePath(fileUri), // Добавляем поле для отображения
                                 });
                             } else if (isExclude) {
                                 newSearchResults.push({
-                                    filePath: './' + workspace.asRelativePath(fileUri), // Добавляем './'
+                                    filePath: fileUri.fsPath, // Сохраняем абсолютный путь
                                     matches: [
                                         {
                                             lineNumber: 1,
@@ -554,6 +557,7 @@ async function performSearch(
                                             matchEndColumn: 0,
                                         },
                                     ],
+                                    displayPath: './' + workspace.asRelativePath(fileUri), // Добавляем поле для отображения
                                 });
                             }
                         }
@@ -644,7 +648,8 @@ function activateBuffer(bufferId: number): void {
 
     // Создаем результаты для отображения файлов из буфера
     const bufferResults = buffer.files.map(uri => ({
-        filePath: './' + workspace.asRelativePath(uri),
+        filePath: uri.fsPath,
+        displayPath: './' + workspace.asRelativePath(uri),
         matches: [
             {
                 lineNumber: 1,

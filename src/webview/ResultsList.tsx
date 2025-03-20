@@ -3,7 +3,8 @@ import { SearchMatch } from './App';
 
 interface ResultsListProps {
     results: {
-        filePath: string;
+        filePath: string; // Абсолютный путь
+        displayPath: string; // Относительный путь для отображения
         matches: SearchMatch[];
     }[];
     onOpenFile: (filePath: string, lineNumber?: number) => void;
@@ -47,7 +48,7 @@ export const ResultsList: React.FC<ResultsListProps> = ({ results, onOpenFile })
                                 onOpenFile(result.filePath);
                             }}
                         >
-                            {result.filePath}
+                            {result.displayPath}
                         </span>
                         <span className="match-count">
                             {result.matches.length}{' '}

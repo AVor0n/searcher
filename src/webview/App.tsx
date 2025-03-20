@@ -25,6 +25,7 @@ export interface SearchMatch {
 export interface SearchState {
     results: {
         filePath: string;
+        displayPath: string;
         matches: SearchMatch[];
     }[];
     buffers: SearchBuffer[];
